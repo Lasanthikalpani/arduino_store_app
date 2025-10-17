@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide User;
+
+import '../models/user.dart' as app_models; // ⬅️ ADD PREFIX
 
 class AuthProvider with ChangeNotifier {
   User? _user;
@@ -18,20 +21,61 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await ApiService.loginUser(
-        email: email,
-        password: password,
-      );
+      print('🔐 Attempting Firebase authentication...');
+
+      // 1. Sign in with Firebase Auth
+      final userCredential = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: email, password: password);
+
+      // 2. Get the ID token - PROPER NULL SAFETY
+      final user = userCredential.user;
+      if (user == null) {
+        _error = 'User not found after authentication';
+        return false;
+      }
+
+      final idToken = await user.getIdToken();
+
+      // Check if idToken is null or empty
+      if (idToken == null || idToken.isEmpty) {
+        _error = 'Failed to get authentication token';
+        return false;
+      }
+
+      print('✅ Firebase authentication successful');
+      print('📝 ID token received: ${idToken.substring(0, 20)}...');
+
+      // 3. Call your backend with the token (idToken is now guaranteed non-null)
+      final response = await ApiService.loginUser(idToken: idToken);
 
       if (response['success'] == true) {
-        _user = User.fromJson(response['data']);
+        _user = User.fromJson(response['user']);
+        print('✅ Backend login successful');
         return true;
       } else {
         _error = response['error'] ?? 'Login failed';
         return false;
       }
+    } on FirebaseAuthException catch (e) {
+      print('❌ Firebase auth error: ${e.code} - ${e.message}');
+
+      if (e.code == 'user-not-found') {
+        _error = 'No user found with this email';
+      } else if (e.code == 'wrong-password') {
+        _error = 'Incorrect password';
+      } else if (e.code == 'invalid-email') {
+        _error = 'Invalid email address';
+      } else if (e.code == 'user-disabled') {
+        _error = 'This account has been disabled';
+      } else if (e.code == 'too-many-requests') {
+        _error = 'Too many attempts. Please try again later.';
+      } else {
+        _error = 'Login failed: ${e.message}';
+      }
+      return false;
     } catch (e) {
-      _error = e.toString();
+      print('❌ Login error: $e');
+      _error = 'Login failed: $e';
       return false;
     } finally {
       _isLoading = false;
