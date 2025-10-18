@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide User;
+
+import '../models/user.dart' as app_models; // ⬅️ ADD PREFIX
 
 class AuthProvider with ChangeNotifier {
   User? _user;
@@ -18,20 +21,34 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      print('🔐 Attempting DIRECT BACKEND authentication...');
+      print('📧 Email: $email');
+
+      // SKIP FIREBASE AUTH - go directly to your backend
       final response = await ApiService.loginUser(
         email: email,
         password: password,
       );
 
+      print('📥 Backend response received');
+      print('✅ Response success: ${response['success']}');
+
       if (response['success'] == true) {
-        _user = User.fromJson(response['data']);
+        _user = User.fromJson(response['user']);
+        print('✅ Backend login successful');
+        print('👤 User email: ${_user?.email}');
+        print('📱 User phone: ${_user?.phone}');
+        print('🏠 User address: ${_user?.address}');
         return true;
       } else {
         _error = response['error'] ?? 'Login failed';
+        print('❌ Backend error: $_error');
         return false;
       }
     } catch (e) {
-      _error = e.toString();
+      print('❌ Login error: $e');
+      print('❌ Error type: ${e.runtimeType}');
+      _error = 'Login failed. Please try again.';
       return false;
     } finally {
       _isLoading = false;

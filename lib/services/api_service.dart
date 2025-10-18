@@ -56,66 +56,70 @@ class ApiService {
 
   // Real registration (for when Firebase is fixed)
   static Future<Map<String, dynamic>> registerUser({
-  required String firstName,
-  required String lastName,
-  required String email,
-  required String password,
-  required String phone,
-  required String address,
-}) async {
-  try {
-    final url = Uri.parse('$baseUrl/auth/register');
+    required String firstName,
+    required String lastName,
+    required String email,
+    required String password,
+    required String phone,
+    required String address,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/auth/register');
 
-    // ADD DETAILED LOGGING
-    print('🚀 API SERVICE DEBUG - Preparing request:');
-    print('   📱 Phone: "$phone" (type: ${phone.runtimeType})');
-    print('   🏠 Address: "$address" (type: ${address.runtimeType})');
-    print('   👤 First Name: "$firstName"');
-    print('   👤 Last Name: "$lastName"');
-    print('   📧 Email: "$email"');
+      // ADD DETAILED LOGGING
+      print('🚀 API SERVICE DEBUG - Preparing request:');
+      print('   📱 Phone: "$phone" (type: ${phone.runtimeType})');
+      print('   🏠 Address: "$address" (type: ${address.runtimeType})');
+      print('   👤 First Name: "$firstName"');
+      print('   👤 Last Name: "$lastName"');
+      print('   📧 Email: "$email"');
 
-    final Map<String, dynamic> requestBody = {
-      'firstName': firstName,
-      'lastName': lastName,
-      'email': email,
-      'password': password,
-      'phone': phone,
-      'address': address,
-    };
-
-    print('📦 API SERVICE DEBUG - Request body:');
-    print('   $requestBody');
-
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(requestBody),
-    ).timeout(const Duration(seconds: 10));
-
-    print('📥 API SERVICE DEBUG - Response:');
-    print('   Status: ${response.statusCode}');
-    print('   Body: ${response.body}');
-
-    final Map<String, dynamic> responseData = json.decode(response.body);
-
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      return {
-        'success': true,
-        'message': responseData['message'] ?? 'Registration successful',
-        'user': responseData['user'] ?? responseData,
+      final Map<String, dynamic> requestBody = {
+        'firstName': firstName,
+        'lastName': lastName,
+        'email': email,
+        'password': password,
+        'phone': phone,
+        'address': address,
       };
-    } else {
-      return {
-        'success': false,
-        'message': responseData['error'] ?? 'Registration failed',
-      };
+
+      print('📦 API SERVICE DEBUG - Request body:');
+      print('   $requestBody');
+
+      final response = await http
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode(requestBody),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      print('📥 API SERVICE DEBUG - Response:');
+      print('   Status: ${response.statusCode}');
+      print('   Body: ${response.body}');
+
+      final Map<String, dynamic> responseData = json.decode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {
+          'success': true,
+          'message': responseData['message'] ?? 'Registration successful',
+          'user': responseData['user'] ?? responseData,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': responseData['error'] ?? 'Registration failed',
+        };
+      }
+    } catch (e) {
+      print('❌ API SERVICE DEBUG - Error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
     }
-  } catch (e) {
-    print('❌ API SERVICE DEBUG - Error: $e');
-    return {'success': false, 'message': 'Network error: $e'};
   }
-}
   // Add this below registerUser()
+
+  // In api_service.dart - UPDATE the loginUser method
 
   static Future<Map<String, dynamic>> loginUser({
     required String email,
@@ -124,13 +128,13 @@ class ApiService {
     try {
       final url = Uri.parse('$baseUrl/auth/login');
 
+      print('🚀 Sending LOGIN request with email/password');
+      print('📧 Email: $email');
+
       final Map<String, dynamic> requestBody = {
         'email': email,
         'password': password,
       };
-
-      print('🚀 Sending LOGIN request to: $url');
-      print('📦 Request body: $requestBody');
 
       final response = await http
           .post(
@@ -142,6 +146,49 @@ class ApiService {
 
       print('📥 Response status: ${response.statusCode}');
       print('📥 Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        return {
+          'success': true,
+          'message': responseData['message'] ?? 'Login successful',
+          'user': responseData['user'],
+        };
+      } else {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        return {
+          'success': false,
+          'error':
+              responseData['error'] ??
+              'Login failed with status ${response.statusCode}',
+        };
+      }
+    } catch (e) {
+      print('❌ Login API error: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  // KEEP the old method for backward compatibility or DELETE it
+  static Future<Map<String, dynamic>> loginUserOld({
+    required String email,
+    required String password,
+  }) async {
+    // This is your OLD method - you can delete it
+    try {
+      final url = Uri.parse('$baseUrl/auth/login');
+      final Map<String, dynamic> requestBody = {
+        'email': email,
+        'password': password,
+      };
+
+      final response = await http
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode(requestBody),
+          )
+          .timeout(const Duration(seconds: 10));
 
       final Map<String, dynamic> responseData = json.decode(response.body);
 
@@ -158,7 +205,6 @@ class ApiService {
         };
       }
     } catch (e) {
-      print('❌ Login error: $e');
       return {'success': false, 'error': 'Network error: $e'};
     }
   }
