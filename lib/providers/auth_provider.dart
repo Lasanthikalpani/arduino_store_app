@@ -21,61 +21,34 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      print('🔐 Attempting Firebase authentication...');
+      print('🔐 Attempting DIRECT BACKEND authentication...');
+      print('📧 Email: $email');
 
-      // 1. Sign in with Firebase Auth
-      final userCredential = await FirebaseAuth.instance
-          .signInWithEmailAndPassword(email: email, password: password);
+      // SKIP FIREBASE AUTH - go directly to your backend
+      final response = await ApiService.loginUser(
+        email: email,
+        password: password,
+      );
 
-      // 2. Get the ID token - PROPER NULL SAFETY
-      final user = userCredential.user;
-      if (user == null) {
-        _error = 'User not found after authentication';
-        return false;
-      }
-
-      final idToken = await user.getIdToken();
-
-      // Check if idToken is null or empty
-      if (idToken == null || idToken.isEmpty) {
-        _error = 'Failed to get authentication token';
-        return false;
-      }
-
-      print('✅ Firebase authentication successful');
-      print('📝 ID token received: ${idToken.substring(0, 20)}...');
-
-      // 3. Call your backend with the token (idToken is now guaranteed non-null)
-      final response = await ApiService.loginUser(idToken: idToken);
+      print('📥 Backend response received');
+      print('✅ Response success: ${response['success']}');
 
       if (response['success'] == true) {
         _user = User.fromJson(response['user']);
         print('✅ Backend login successful');
+        print('👤 User email: ${_user?.email}');
+        print('📱 User phone: ${_user?.phone}');
+        print('🏠 User address: ${_user?.address}');
         return true;
       } else {
         _error = response['error'] ?? 'Login failed';
+        print('❌ Backend error: $_error');
         return false;
       }
-    } on FirebaseAuthException catch (e) {
-      print('❌ Firebase auth error: ${e.code} - ${e.message}');
-
-      if (e.code == 'user-not-found') {
-        _error = 'No user found with this email';
-      } else if (e.code == 'wrong-password') {
-        _error = 'Incorrect password';
-      } else if (e.code == 'invalid-email') {
-        _error = 'Invalid email address';
-      } else if (e.code == 'user-disabled') {
-        _error = 'This account has been disabled';
-      } else if (e.code == 'too-many-requests') {
-        _error = 'Too many attempts. Please try again later.';
-      } else {
-        _error = 'Login failed: ${e.message}';
-      }
-      return false;
     } catch (e) {
       print('❌ Login error: $e');
-      _error = 'Login failed: $e';
+      print('❌ Error type: ${e.runtimeType}');
+      _error = 'Login failed. Please try again.';
       return false;
     } finally {
       _isLoading = false;

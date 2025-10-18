@@ -23,6 +23,97 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  void _showDebugDialog(BuildContext context, AuthProvider authProvider) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Login Debug Info'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('You are about to login with:'),
+            const SizedBox(height: 10),
+            Text('📧 Email: "${_emailController.text.trim()}"'),
+            Text('🔐 Password: "${_passwordController.text.length} characters"'),
+            const SizedBox(height: 10),
+            const Text(
+              'Using DIRECT BACKEND authentication (bypassing Firebase Auth)',
+              style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _performLogin(authProvider);
+            },
+            child: const Text('Login'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _performLogin(AuthProvider authProvider) async {
+    try {
+      print('🎯 Starting login process...');
+      print('📧 Email: ${_emailController.text.trim()}');
+      print('🔐 Password: ${_passwordController.text.length} characters');
+
+      final success = await authProvider.login(
+        _emailController.text.trim(),
+        _passwordController.text,
+      );
+
+      if (success && context.mounted) {
+        print('✅ Login successful - navigating to home screen');
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Login successful!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        
+        // Navigate to home screen
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const HomeScreen(),
+          ),
+        );
+      } else if (context.mounted) {
+        print('❌ Login failed: ${authProvider.error}');
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Login failed: ${authProvider.error}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Login process error: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Login error: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -126,6 +217,34 @@ class _LoginScreenState extends State<LoginScreen> {
 
               const SizedBox(height: 20),
 
+              // Debug Info Banner
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info, color: Colors.orange, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Using direct backend authentication',
+                        style: TextStyle(
+                          color: Colors.orange,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
               // Login Button
               SizedBox(
                 width: double.infinity,
@@ -135,24 +254,15 @@ class _LoginScreenState extends State<LoginScreen> {
                       ? null
                       : () async {
                           if (_formKey.currentState!.validate()) {
-                            final success = await authProvider.login(
-                              _emailController.text.trim(),
-                              _passwordController.text,
-                            );
-                            
-                            if (success && context.mounted) {
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const HomeScreen(),
-                                ),
-                              );
-                            }
+                            _showDebugDialog(context, authProvider);
                           }
                         },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   child: authProvider.isLoading
                       ? const SizedBox(
@@ -165,7 +275,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         )
                       : const Text(
                           'Login',
-                          style: TextStyle(fontSize: 16),
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                         ),
                 ),
               ),
@@ -188,6 +298,23 @@ class _LoginScreenState extends State<LoginScreen> {
                   "Don't have an account? Register here",
                   style: TextStyle(color: Colors.blue),
                 ),
+              ),
+
+              // Debug Section
+              const SizedBox(height: 20),
+              const Divider(),
+              const Text(
+                'Debug Info',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Backend: ${const bool.fromEnvironment('DEBUG') ? 'Debug' : 'Production'}',
+                style: const TextStyle(fontSize: 10, color: Colors.grey),
               ),
             ],
           ),

@@ -120,18 +120,21 @@ class ApiService {
   // Add this below registerUser()
 
   // In api_service.dart - UPDATE the loginUser method
+
   static Future<Map<String, dynamic>> loginUser({
-    required String idToken, // ⬅️ CHANGE from email/password to idToken
+    required String email,
+    required String password,
   }) async {
     try {
       final url = Uri.parse('$baseUrl/auth/login');
 
-      final Map<String, dynamic> requestBody = {
-        'idToken': idToken, // ⬅️ SEND token instead of email/password
-      };
+      print('🚀 Sending LOGIN request with email/password');
+      print('📧 Email: $email');
 
-      print('🚀 Sending LOGIN request to backend with token');
-      print('📦 Request body: {idToken: ***}'); // Don't log actual token
+      final Map<String, dynamic> requestBody = {
+        'email': email,
+        'password': password,
+      };
 
       final response = await http
           .post(
@@ -144,18 +147,20 @@ class ApiService {
       print('📥 Response status: ${response.statusCode}');
       print('📥 Response body: ${response.body}');
 
-      final Map<String, dynamic> responseData = json.decode(response.body);
-
       if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = json.decode(response.body);
         return {
           'success': true,
           'message': responseData['message'] ?? 'Login successful',
           'user': responseData['user'],
         };
       } else {
+        final Map<String, dynamic> responseData = json.decode(response.body);
         return {
           'success': false,
-          'error': responseData['error'] ?? 'Login failed',
+          'error':
+              responseData['error'] ??
+              'Login failed with status ${response.statusCode}',
         };
       }
     } catch (e) {

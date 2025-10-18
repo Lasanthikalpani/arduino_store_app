@@ -10,17 +10,25 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Networking & State Management
+  # 🔥 Firebase Core - MUST BE FIRST
+  firebase_core: ^2.24.0
+
+  # 🔥 Firebase Services
+  firebase_auth: ^4.17.3
+  cloud_firestore: ^4.13.3
+
+  # 📦 Networking & HTTP
   http: ^1.2.2
+
+  # 🎯 State Management
   provider: ^6.1.2
+
+  # 💾 Local Storage
   shared_preferences: ^2.3.2
   flutter_secure_storage: ^9.0.0
-  cupertino_icons: ^1.0.8
 
-  # 🔥 Firebase Packages
-  firebase_core: ^3.8.0
-  firebase_auth: ^5.3.0
-  cloud_firestore: ^5.4.2
+  # 🎨 UI & Icons
+  cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
