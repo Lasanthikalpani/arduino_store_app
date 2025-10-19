@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import 'register_screen.dart';
 import 'home_screen.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -23,95 +25,470 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _showDebugDialog(BuildContext context, AuthProvider authProvider) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Login Debug Info'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('You are about to login with:'),
-            const SizedBox(height: 10),
-            Text('📧 Email: "${_emailController.text.trim()}"'),
-            Text('🔐 Password: "${_passwordController.text.length} characters"'),
-            const SizedBox(height: 10),
-            const Text(
-              'Using DIRECT BACKEND authentication (bypassing Firebase Auth)',
-              style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
-            ),
-          ],
+  Widget _buildDebugSection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+        const SizedBox(height: 8),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _buildDebugInfo(
+    String label,
+    String value, {
+    bool isSuccess = true,
+    bool isTesting = false,
+  }) {
+    Color textColor = Colors.black;
+    if (isTesting)
+      textColor = Colors.blue;
+    else if (!isSuccess)
+      textColor = Colors.red;
+    else if (value.contains('✅'))
+      textColor = Colors.green;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 12,
+                color: textColor,
+              ),
+            ),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _performLogin(authProvider);
-            },
-            child: const Text('Login'),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 12,
+                color: textColor,
+                fontWeight: isTesting ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  void _performLogin(AuthProvider authProvider) async {
+  Future<Map<String, dynamic>> _testApiConnection() async {
     try {
-      print('🎯 Starting login process...');
-      print('📧 Email: ${_emailController.text.trim()}');
-      print('🔐 Password: ${_passwordController.text.length} characters');
+      print('🔧 Testing API connection to backend...');
 
-      final success = await authProvider.login(
-        _emailController.text.trim(),
-        _passwordController.text,
-      );
+      // Test a real endpoint that definitely exists
+      final productsUrl = Uri.parse('http://localhost:3001/api/products');
+      final response = await http
+          .get(productsUrl)
+          .timeout(const Duration(seconds: 5));
 
-      if (success && context.mounted) {
-        print('✅ Login successful - navigating to home screen');
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Login successful!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-        
-        // Navigate to home screen
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const HomeScreen(),
-          ),
-        );
-      } else if (context.mounted) {
-        print('❌ Login failed: ${authProvider.error}');
-        // Show error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Login failed: ${authProvider.error}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+      print('🔧 Products endpoint: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        return {
+          'reachable': true,
+          'details': 'API is fully operational (Products endpoint working)',
+        };
+      } else if (response.statusCode == 401) {
+        return {
+          'reachable': true,
+          'details': 'API is reachable but requires authentication',
+        };
+      } else {
+        return {
+          'reachable': true, // Still reachable, just different response
+          'details': 'Endpoint returned HTTP ${response.statusCode}',
+        };
       }
     } catch (e) {
-      print('❌ Login process error: $e');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Login error: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
+      print('🔧 API connection test failed: $e');
+      return {
+        'reachable': false,
+        'error': e.toString(),
+        'details': 'Make sure backend is running on localhost:3001',
+      };
     }
+  }
+
+  Future<Map<String, dynamic>> _testAuthentication(
+    String email,
+    String password,
+  ) async {
+    try {
+      print('🔧 Testing authentication with current credentials...');
+
+      final url = Uri.parse('http://localhost:3001/api/auth/login');
+      final response = await http
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'email': email, 'password': password}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      print('🔧 Auth test response: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        return {
+          'success': true,
+          'message': responseData['message'] ?? 'Login successful',
+          'user': responseData['userId'] ?? 'Unknown',
+          'token': responseData['token'],
+        };
+      } else {
+        final responseData = json.decode(response.body);
+        return {
+          'success': false,
+          'error': responseData['error'] ?? 'HTTP ${response.statusCode}',
+          'message': responseData['message'],
+        };
+      }
+    } catch (e) {
+      print('🔧 Authentication test failed: $e');
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  Future<void> _performLoginWithLogging(
+    BuildContext context,
+    AuthProvider authProvider,
+    String email,
+    String password,
+  ) async {
+    print('🎯 Starting login process with detailed logging...');
+    print('📧 Email: $email');
+    print('🔐 Password: ${password.length} characters');
+
+    // Clear any previous errors
+    authProvider.clearError();
+
+    final success = await authProvider.login(email, password);
+
+    // Use post-frame callback to ensure context is valid
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Login successful! Redirecting...'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          print('🎉 Login successful - automatic redirect should happen');
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Login failed: ${authProvider.error}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+          print('💥 Login failed: ${authProvider.error}');
+
+          // Show detailed error dialog
+          _showErrorDetails(context, authProvider.error ?? 'Unknown error');
+        }
+      }
+    });
+  }
+
+  void _showErrorDetails(BuildContext context, String error) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('❌ Login Error Details'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'The login failed with the following error:',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red),
+                ),
+                child: SelectableText(
+                  error,
+                  style: const TextStyle(fontFamily: 'Monospace', fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Troubleshooting:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '• Check backend console for detailed logs\n'
+                '• Verify email/password are correct\n'
+                '• Ensure backend is running on port 3001\n'
+                '• Check browser console for network errors',
+                style: TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDebugDialog(BuildContext context, AuthProvider authProvider) async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.bug_report, color: Colors.orange),
+                SizedBox(width: 8),
+                Text('🔧 Login Debug Panel'),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Login Process Analysis',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Input Data
+                  _buildDebugSection('📝 Input Data', [
+                    _buildDebugInfo('Email', email),
+                    _buildDebugInfo(
+                      'Password',
+                      '${password.length} characters',
+                    ),
+                  ]),
+
+                  const SizedBox(height: 16),
+
+                  // API Connection Test
+                  FutureBuilder<Map<String, dynamic>>(
+                    future: _testApiConnection(),
+                    builder: (context, snapshot) {
+                      final isTesting =
+                          snapshot.connectionState == ConnectionState.waiting;
+                      final hasData = snapshot.hasData;
+
+                      return _buildDebugSection('🌐 API Connection', [
+                        if (isTesting)
+                          _buildDebugInfo(
+                            'Status',
+                            'Testing connection...',
+                            isTesting: true,
+                          )
+                        else if (hasData)
+                          _buildDebugInfo(
+                            'Backend Status',
+                            snapshot.data!['reachable']
+                                ? '✅ ONLINE'
+                                : '❌ OFFLINE',
+                            isSuccess: snapshot.data!['reachable'],
+                          )
+                        else
+                          _buildDebugInfo(
+                            'Status',
+                            '❌ Test failed',
+                            isSuccess: false,
+                          ),
+
+                        if (hasData && snapshot.data!['details'] != null)
+                          _buildDebugInfo(
+                            'Details',
+                            snapshot.data!['details']!,
+                          ),
+
+                        if (hasData && snapshot.data!['error'] != null)
+                          _buildDebugInfo(
+                            'Error',
+                            snapshot.data!['error']!,
+                            isSuccess: false,
+                          ),
+                      ]);
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Authentication Test
+                  FutureBuilder<Map<String, dynamic>>(
+                    future: _testAuthentication(email, password),
+                    builder: (context, snapshot) {
+                      final isTesting =
+                          snapshot.connectionState == ConnectionState.waiting;
+                      final hasData = snapshot.hasData;
+
+                      return _buildDebugSection('🔐 Authentication Test', [
+                        if (isTesting)
+                          _buildDebugInfo(
+                            'Status',
+                            'Testing login...',
+                            isTesting: true,
+                          )
+                        else if (hasData)
+                          _buildDebugInfo(
+                            'Login Result',
+                            snapshot.data!['success']
+                                ? '✅ SUCCESS'
+                                : '❌ FAILED',
+                            isSuccess: snapshot.data!['success'],
+                          )
+                        else
+                          _buildDebugInfo(
+                            'Status',
+                            'Not tested',
+                            isTesting: false,
+                          ),
+
+                        if (hasData && snapshot.data!['message'] != null)
+                          _buildDebugInfo(
+                            'Message',
+                            snapshot.data!['message']!,
+                          ),
+
+                        if (hasData && snapshot.data!['user'] != null)
+                          _buildDebugInfo('User ID', snapshot.data!['user']!),
+
+                        if (hasData && snapshot.data!['token'] != null)
+                          _buildDebugInfo(
+                            'Token',
+                            '${snapshot.data!['token']!.length} chars',
+                          ),
+
+                        if (hasData && snapshot.data!['error'] != null)
+                          _buildDebugInfo(
+                            'Error',
+                            snapshot.data!['error']!,
+                            isSuccess: false,
+                          ),
+                      ]);
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 8),
+
+                  const Text(
+                    'Next Steps:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '• If API is online and auth works, proceed with login\n'
+                    '• Check console for detailed backend logs\n'
+                    '• Verify user data matches expectations',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              OutlinedButton(
+                onPressed: () async {
+                  // Test again
+                  setState(() {});
+                },
+                child: const Text('Test Again'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(context); // Close debug dialog
+                  await _performLoginWithLogging(
+                    context,
+                    authProvider,
+                    email,
+                    password,
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Proceed with Login'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _performLogin(
+    BuildContext context,
+    AuthProvider authProvider,
+    String email,
+    String password,
+  ) async {
+    print('🎯 Starting login process...');
+    print('📧 Email: $email');
+    print('🔐 Password: ${password.length} characters');
+
+    final success = await authProvider.login(email, password);
+
+    // Use a post-frame callback to ensure context is valid
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Login successful!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          print('✅ Login successful - user should be redirected automatically');
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Login failed: ${authProvider.error}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          print('❌ Login failed: ${authProvider.error}');
+        }
+      }
+    });
   }
 
   @override
@@ -132,18 +509,11 @@ class _LoginScreenState extends State<LoginScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // Logo/Header
-              const Icon(
-                Icons.shopping_cart,
-                size: 80,
-                color: Colors.blue,
-              ),
+              const Icon(Icons.shopping_cart, size: 80, color: Colors.blue),
               const SizedBox(height: 20),
               const Text(
                 'Welcome Back',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 30),
 
@@ -233,10 +603,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Expanded(
                       child: Text(
                         'Using direct backend authentication',
-                        style: TextStyle(
-                          color: Colors.orange,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: Colors.orange, fontSize: 12),
                       ),
                     ),
                   ],
@@ -254,6 +621,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ? null
                       : () async {
                           if (_formKey.currentState!.validate()) {
+                            // Show debug dialog first
                             _showDebugDialog(context, authProvider);
                           }
                         },
@@ -275,7 +643,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         )
                       : const Text(
                           'Login',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                 ),
               ),
