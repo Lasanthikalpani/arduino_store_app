@@ -8,6 +8,9 @@ import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/products_screen.dart';
 import 'screens/splash_screen.dart';
+import 'screens/checkout_screen.dart';
+import 'screens/cart_screen.dart';
+
 
 void main() {
   runApp(const MyApp());
@@ -36,6 +39,8 @@ class MyApp extends StatelessWidget {
           '/login': (context) => const LoginScreen(),
           '/register': (context) => const RegisterScreen(),
           '/products': (context) => const ProductsScreen(),
+          '/cart': (context) => const CartScreen(),
+  '/checkout': (context) => const CheckoutScreen(),
         },
         debugShowCheckedModeBanner: false,
       ),
