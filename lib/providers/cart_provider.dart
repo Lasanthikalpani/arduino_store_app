@@ -1,6 +1,7 @@
-// lib/providers/cart_provider.dart
+// lib/providers/cart_provider.dart - FIXED VERSION
 import 'package:flutter/foundation.dart';
 import '../models/cart_item.dart';
+import '../models/product.dart';
 import '../services/api_service.dart';
 
 class CartProvider with ChangeNotifier {
@@ -14,6 +15,9 @@ class CartProvider with ChangeNotifier {
   int get itemCount => _items.fold(0, (sum, item) => sum + item.quantity);
   double get totalPrice => _items.fold(0, (sum, item) => sum + item.totalPrice);
 
+  // Store product cache to avoid repeated API calls
+  final Map<String, Product> _productCache = {};
+
   Future<void> loadCart() async {
     _isLoading = true;
     notifyListeners();
@@ -21,13 +25,59 @@ class CartProvider with ChangeNotifier {
     try {
       final response = await ApiService.getCart();
       
+      print('🛒 Cart API Response: $response');
+      
       if (response['success'] == true) {
         final cartData = response['cart'];
+        print('📦 Cart data structure: $cartData');
+        
         if (cartData['items'] != null) {
           final itemsData = cartData['items'] as List;
-          _items = itemsData.map((itemJson) {
-            return CartItem.fromJson(itemJson);
-          }).toList();
+          print('🛍️ Cart items count: ${itemsData.length}');
+          
+          // Clear current items
+          _items = [];
+          
+          // Fetch product details for each cart item
+          for (var itemData in itemsData) {
+            try {
+              final productId = itemData['productId'];
+              print('🔍 Processing cart item for product: $productId');
+              
+              // Get product details
+              final product = await _getProductDetails(productId);
+              
+              // Create CartItem with product details
+              final cartItem = CartItem(
+                id: itemData['id'] ?? productId,
+                productId: productId,
+                productName: product?.name ?? 'Product $productId',
+                price: product?.price ?? 0.0,
+                quantity: itemData['quantity'] ?? 1,
+                imageUrl: product?.imageUrl ?? '',
+              );
+              
+              _items.add(cartItem);
+              print('✅ Added cart item: ${cartItem.productName} - \$${cartItem.price}');
+            } catch (e) {
+              print('❌ Error processing cart item: $e');
+              // Create fallback cart item
+              final cartItem = CartItem(
+                id: itemData['id'] ?? itemData['productId'],
+                productId: itemData['productId'],
+                productName: 'Product ${itemData['productId']}',
+                price: 0.0,
+                quantity: itemData['quantity'] ?? 1,
+                imageUrl: '',
+              );
+              _items.add(cartItem);
+            }
+          }
+          
+          print('✅ Loaded ${_items.length} cart items with details');
+          for (var item in _items) {
+            print('   - ${item.productName}: \$${item.price} x ${item.quantity} = \$${item.totalPrice}');
+          }
         }
         _error = null;
       } else {
@@ -39,6 +89,35 @@ class CartProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  // Helper method to get product details
+  Future<Product?> _getProductDetails(String productId) async {
+    // Check cache first
+    if (_productCache.containsKey(productId)) {
+      return _productCache[productId];
+    }
+    
+    try {
+      // Fetch all products and find the matching one
+      final productsResponse = await ApiService.getProducts();
+      if (productsResponse['success'] == true) {
+        final productsData = productsResponse['products'] as List;
+        for (var productJson in productsData) {
+          final product = Product.fromJson(productJson);
+          _productCache[product.id] = product; // Cache the product
+          if (product.id == productId) {
+            print('🎯 Found product: ${product.name} - \$${product.price}');
+            return product;
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error fetching product details: $e');
+    }
+    
+    print('⚠️ Product not found: $productId');
+    return null;
   }
 
   Future<void> addToCart(String productId, int quantity) async {

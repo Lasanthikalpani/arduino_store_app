@@ -1,11 +1,25 @@
-// lib/screens/cart_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cart_provider.dart';
 import '../models/cart_item.dart';
+import 'checkout_screen.dart';
 
-class CartScreen extends StatelessWidget {
+class CartScreen extends StatefulWidget {
   const CartScreen({Key? key}) : super(key: key);
+
+  @override
+  State<CartScreen> createState() => _CartScreenState();
+}
+
+class _CartScreenState extends State<CartScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Load cart when screen opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<CartProvider>(context, listen: false).loadCart();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,15 +29,52 @@ class CartScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Shopping Cart'),
         backgroundColor: Colors.orange,
+        actions: [
+          if (cartProvider.items.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => _showClearCartDialog(context, cartProvider),
+              tooltip: 'Clear Cart',
+            ),
+        ],
       ),
-      body: cartProvider.isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : cartProvider.items.isEmpty
-              ? const EmptyCartState()
-              : CartItemsList(),
-      bottomNavigationBar: cartProvider.items.isNotEmpty
-          ? CartBottomBar()
-          : null,
+      body: Column(
+        children: [
+          // Cart Items
+          Expanded(
+            child: cartProvider.isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : cartProvider.items.isEmpty
+                    ? const EmptyCartState()
+                    : CartItemsList(cartProvider: cartProvider),
+          ),
+          // Checkout Section
+          if (cartProvider.items.isNotEmpty) CheckoutSection(cartProvider: cartProvider),
+        ],
+      ),
+    );
+  }
+
+  void _showClearCartDialog(BuildContext context, CartProvider cartProvider) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Cart'),
+        content: const Text('Are you sure you want to remove all items from your cart?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              cartProvider.clearCart();
+            },
+            child: const Text('Clear', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -37,39 +88,26 @@ class EmptyCartState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
-            Icons.shopping_cart_outlined,
-            size: 80,
-            color: Colors.grey,
-          ),
+          const Icon(Icons.shopping_cart_outlined, size: 80, color: Colors.grey),
           const SizedBox(height: 20),
           const Text(
             'Your cart is empty',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey,
-            ),
+            style: TextStyle(fontSize: 18, color: Colors.grey),
           ),
           const SizedBox(height: 10),
           const Text(
-            'Add some Arduino products to get started!',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-            ),
-            textAlign: TextAlign.center,
+            'Add some awesome Arduino products!',
+            style: TextStyle(color: Colors.grey),
           ),
           const SizedBox(height: 30),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context); // Go back to products
-            },
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.shopping_bag),
+            label: const Text('Continue Shopping'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Browse Products'),
           ),
         ],
       ),
@@ -78,55 +116,84 @@ class EmptyCartState extends StatelessWidget {
 }
 
 class CartItemsList extends StatelessWidget {
+  final CartProvider cartProvider;
+
+  const CartItemsList({Key? key, required this.cartProvider}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
-    final cartProvider = Provider.of<CartProvider>(context);
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: cartProvider.items.length,
-      itemBuilder: (context, index) {
-        final item = cartProvider.items[index];
-        return CartItemCard(item: item);
-      },
+    return Column(
+      children: [
+        // Cart Summary
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: Colors.grey[50],
+          child: Row(
+            children: [
+              const Icon(Icons.shopping_cart, color: Colors.orange),
+              const SizedBox(width: 8),
+              Text(
+                '${cartProvider.itemCount} ${cartProvider.itemCount == 1 ? 'item' : 'items'} in cart',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+        // Items List
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: cartProvider.items.length,
+            itemBuilder: (context, index) {
+              final item = cartProvider.items[index];
+              return CartItemCard(item: item, cartProvider: cartProvider);
+            },
+          ),
+        ),
+      ],
     );
   }
 }
 
 class CartItemCard extends StatelessWidget {
   final CartItem item;
+  final CartProvider cartProvider;
 
-  const CartItemCard({Key? key, required this.item}) : super(key: key);
+  const CartItemCard({
+    Key? key,
+    required this.item,
+    required this.cartProvider,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final cartProvider = Provider.of<CartProvider>(context, listen: false);
-
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
             // Product Image
             Container(
-              width: 60,
-              height: 60,
+              width: 70,
+              height: 70,
               decoration: BoxDecoration(
-                color: Colors.grey[200],
+                color: Colors.grey[100],
                 borderRadius: BorderRadius.circular(8),
+                image: item.imageUrl.isNotEmpty
+                    ? DecorationImage(
+                        image: NetworkImage(item.imageUrl),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
               ),
-              child: item.imageUrl.isNotEmpty
-                  ? Image.network(
-                      item.imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(Icons.memory, color: Colors.grey);
-                      },
-                    )
-                  : const Icon(Icons.memory, color: Colors.grey),
+              child: item.imageUrl.isEmpty
+                  ? const Icon(Icons.memory, color: Colors.grey, size: 30)
+                  : null,
             ),
             const SizedBox(width: 12),
+            
             // Product Details
             Expanded(
               child: Column(
@@ -147,88 +214,177 @@ class CartItemCard extends StatelessWidget {
                     style: const TextStyle(
                       color: Colors.orange,
                       fontWeight: FontWeight.bold,
+                      fontSize: 16,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'Total: \$${item.totalPrice.toStringAsFixed(2)}',
                     style: const TextStyle(
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
               ),
             ),
+            
             // Quantity Controls
             Column(
               children: [
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () {
-                    cartProvider.updateQuantity(item.id, item.quantity + 1);
-                  },
-                ),
-                Text(
-                  '${item.quantity}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+                // Quantity Display and Controls
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Decrease Button
+                      IconButton(
+                        icon: const Icon(Icons.remove, size: 18),
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                        onPressed: () {
+                          if (item.quantity > 1) {
+                            cartProvider.updateQuantity(item.id, item.quantity - 1);
+                          } else {
+                            _showRemoveDialog(context, item, cartProvider);
+                          }
+                        },
+                      ),
+                      
+                      // Quantity Display
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                        ),
+                        child: Text(
+                          item.quantity.toString(),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                      
+                      // Increase Button
+                      IconButton(
+                        icon: const Icon(Icons.add, size: 18),
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                        onPressed: () {
+                          cartProvider.updateQuantity(item.id, item.quantity + 1);
+                        },
+                      ),
+                    ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.remove),
-                  onPressed: () {
-                    cartProvider.updateQuantity(item.id, item.quantity - 1);
-                  },
+                const SizedBox(height: 8),
+                
+                // Remove Button
+                TextButton(
+                  onPressed: () => _showRemoveDialog(context, item, cartProvider),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  child: const Text(
+                    'Remove',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
               ],
-            ),
-            // Remove Button
-            IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: () {
-                cartProvider.removeFromCart(item.id);
-              },
             ),
           ],
         ),
       ),
     );
   }
+
+  void _showRemoveDialog(BuildContext context, CartItem item, CartProvider cartProvider) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Item'),
+        content: Text('Remove ${item.productName} from cart?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              cartProvider.removeFromCart(item.id);
+            },
+            child: const Text('Remove', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class CartBottomBar extends StatelessWidget {
+class CheckoutSection extends StatelessWidget {
+  final CartProvider cartProvider;
+
+  const CheckoutSection({Key? key, required this.cartProvider}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
-    final cartProvider = Provider.of<CartProvider>(context);
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.shade300)),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.3),
-            blurRadius: 10,
+            color: Colors.grey.withOpacity(0.2),
+            blurRadius: 8,
             offset: const Offset(0, -2),
           ),
         ],
       ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
+          // Order Summary
+          const Row(
+            children: [
+              Icon(Icons.receipt, color: Colors.orange, size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Order Summary',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          
+          // Subtotal
+          _buildSummaryRow('Subtotal', '\$${cartProvider.totalPrice.toStringAsFixed(2)}'),
+          
+          // Shipping
+          _buildSummaryRow('Shipping', '\$5.99'),
+          
+          // Tax
+          _buildSummaryRow('Tax', '\$${(cartProvider.totalPrice * 0.08).toStringAsFixed(2)}'),
+          
+          const Divider(height: 20),
+          
+          // Total
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
                 'Total:',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               Text(
-                '\$${cartProvider.totalPrice.toStringAsFixed(2)}',
+                '\$${(cartProvider.totalPrice + 5.99 + (cartProvider.totalPrice * 0.08)).toStringAsFixed(2)}',
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -237,32 +393,46 @@ class CartBottomBar extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
+          
+          // Checkout Button
           SizedBox(
             width: double.infinity,
             height: 50,
             child: ElevatedButton(
               onPressed: () {
-                // TODO: Implement checkout
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Checkout functionality coming soon!'),
-                  ),
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CheckoutScreen()),
                 );
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange,
                 foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 2,
               ),
               child: const Text(
                 'PROCEED TO CHECKOUT',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
         ],
       ),
     );

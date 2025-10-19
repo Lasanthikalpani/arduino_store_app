@@ -19,9 +19,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
   void initState() {
     super.initState();
     // Load products when screen initializes
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<ProductsProvider>(context, listen: false).loadProducts();
-      Provider.of<CartProvider>(context, listen: false).loadCart();
+    // Load products and cart when screen initializes
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final productsProvider = Provider.of<ProductsProvider>(
+        context,
+        listen: false,
+      );
+      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      // Load products first, then cart (so cart can access product details)
+      productsProvider.loadProducts().then((_) {
+        cartProvider.loadCart();
+      });
     });
   }
 
@@ -64,10 +72,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     ),
                     child: Text(
                       cartProvider.itemCount.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                      ),
+                      style: const TextStyle(color: Colors.white, fontSize: 10),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -105,39 +110,39 @@ class _ProductsScreenState extends State<ProductsScreen> {
       body: productsProvider.isLoading
           ? const Center(child: CircularProgressIndicator())
           : productsProvider.error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.error, size: 64, color: Colors.red),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Error: ${productsProvider.error}',
-                        style: const TextStyle(fontSize: 16),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => productsProvider.loadProducts(),
-                        child: const Text('Retry'),
-                      ),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error: ${productsProvider.error}',
+                    style: const TextStyle(fontSize: 16),
+                    textAlign: TextAlign.center,
                   ),
-                )
-              : GridView.builder(
-                  padding: const EdgeInsets.all(16),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 0.8,
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => productsProvider.loadProducts(),
+                    child: const Text('Retry'),
                   ),
-                  itemCount: productsProvider.products.length,
-                  itemBuilder: (context, index) {
-                    final product = productsProvider.products[index];
-                    return ProductCard(product: product);
-                  },
-                ),
+                ],
+              ),
+            )
+          : GridView.builder(
+              padding: const EdgeInsets.all(16),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                childAspectRatio: 0.8,
+              ),
+              itemCount: productsProvider.products.length,
+              itemBuilder: (context, index) {
+                final product = productsProvider.products[index];
+                return ProductCard(product: product);
+              },
+            ),
     );
   }
 
@@ -166,6 +171,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 }
+
+// In lib/screens/products_screen.dart - UPDATE the ProductCard:
 
 class ProductCard extends StatelessWidget {
   final Product product;
@@ -197,7 +204,11 @@ class ProductCard extends StatelessWidget {
                     product.imageUrl,
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stackTrace) {
-                      return const Icon(Icons.memory, size: 50, color: Colors.grey);
+                      return const Icon(
+                        Icons.memory,
+                        size: 50,
+                        color: Colors.grey,
+                      );
                     },
                   )
                 : const Icon(Icons.memory, size: 50, color: Colors.grey),
@@ -229,18 +240,18 @@ class ProductCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   product.category,
-                  style: const TextStyle(
-                    color: Colors.grey,
-                    fontSize: 12,
-                  ),
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
                 ),
                 const SizedBox(height: 8),
-                // Add to Cart Button
+                // Add to Cart Button - FIXED: Use product.id instead of product
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                      cartProvider.addToCart(product.id, 1);
+                      cartProvider.addToCart(
+                        product.id,
+                        1,
+                      ); // FIX: Use product.id
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text('Added ${product.name} to cart'),
