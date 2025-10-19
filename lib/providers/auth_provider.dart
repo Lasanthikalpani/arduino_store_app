@@ -1,30 +1,41 @@
 import 'package:flutter/foundation.dart';
-import '../models/user.dart';
 import '../services/api_service.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide User;
-
-import '../models/user.dart' as app_models; // ⬅️ ADD PREFIX
+import '../models/user.dart' as app_models;
 
 class AuthProvider with ChangeNotifier {
-  User? _user;
+  app_models.User? _user;
   bool _isLoading = false;
   String? _error;
+  bool _isDisposed = false; // Add this flag
 
-  User? get user => _user;
+  app_models.User? get user => _user;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isAuthenticated => _user != null;
 
+  // Safe notify listeners method
+  void safeNotifyListeners() {
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
   Future<bool> login(String email, String password) async {
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    safeNotifyListeners();
 
     try {
       print('🔐 Attempting DIRECT BACKEND authentication...');
       print('📧 Email: $email');
 
-      // SKIP FIREBASE AUTH - go directly to your backend
       final response = await ApiService.loginUser(
         email: email,
         password: password,
@@ -32,13 +43,30 @@ class AuthProvider with ChangeNotifier {
 
       print('📥 Backend response received');
       print('✅ Response success: ${response['success']}');
+      print('🔍 Response keys: ${response.keys}');
 
       if (response['success'] == true) {
-        _user = User.fromJson(response['user']);
+        final userData = response['user'];
+
+        if (userData is app_models.User) {
+          _user = userData;
+          print('✅ User object received directly');
+        } else if (userData is Map<String, dynamic>) {
+          _user = app_models.User.fromJson(userData);
+          print('✅ User parsed from Map');
+        } else {
+          throw Exception('Invalid user data type: ${userData.runtimeType}');
+        }
+
         print('✅ Backend login successful');
-        print('👤 User email: ${_user?.email}');
-        print('📱 User phone: ${_user?.phone}');
-        print('🏠 User address: ${_user?.address}');
+        print('👤 User details:');
+        print('   - User ID: ${_user?.userId}');
+        print('   - Name: ${_user?.fullName}');
+        print('   - Email: ${_user?.email}');
+        print('   - Phone: ${_user?.phone}');
+        print('   - Address: ${_user?.address}');
+        print('   - Role: ${_user?.role}');
+
         return true;
       } else {
         _error = response['error'] ?? 'Login failed';
@@ -52,7 +80,7 @@ class AuthProvider with ChangeNotifier {
       return false;
     } finally {
       _isLoading = false;
-      notifyListeners();
+      safeNotifyListeners(); // Use safe method
     }
   }
 
@@ -66,10 +94,9 @@ class AuthProvider with ChangeNotifier {
   }) async {
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    safeNotifyListeners();
 
     try {
-      // COMPREHENSIVE LOGGING OF ALL INPUTS
       print('🔍 AUTH PROVIDER DEBUG - All registration inputs:');
       print('   👤 First Name: "$firstName" (length: ${firstName.length})');
       print('   👤 Last Name: "$lastName" (length: ${lastName.length})');
@@ -78,7 +105,6 @@ class AuthProvider with ChangeNotifier {
       print('   📱 Phone: "$phone" (length: ${phone.length})');
       print('   🏠 Address: "$address" (length: ${address.length})');
 
-      // Validate that we have all required fields
       if (phone.isEmpty || address.isEmpty) {
         print('❌ AUTH PROVIDER DEBUG - Missing required fields!');
         print('   Phone empty: ${phone.isEmpty}');
@@ -92,11 +118,10 @@ class AuthProvider with ChangeNotifier {
         lastName: lastName,
         email: email,
         password: password,
-        phone: phone, // Use user input
-        address: address, // Use user input
+        phone: phone,
+        address: address,
       );
 
-      // ADD RESPONSE LOGGING
       print('🔍 AUTH PROVIDER DEBUG - API Response:');
       print('   Success: ${response['success']}');
       print('   Message: ${response['message']}');
@@ -106,6 +131,9 @@ class AuthProvider with ChangeNotifier {
       }
 
       if (response['success'] == true) {
+        if (response['user'] != null) {
+          _user = app_models.User.fromJson(response['user']);
+        }
         _error = null;
         return true;
       } else {
@@ -118,18 +146,37 @@ class AuthProvider with ChangeNotifier {
       return false;
     } finally {
       _isLoading = false;
-      notifyListeners();
+      safeNotifyListeners(); // Use safe method
     }
   }
 
   void logout() {
     _user = null;
     _error = null;
-    notifyListeners();
+    safeNotifyListeners(); // Use safe method
   }
 
   void clearError() {
     _error = null;
-    notifyListeners();
+    safeNotifyListeners(); // Use safe method
+  }
+
+  Future<void> initialize() async {
+    _isLoading = true;
+    safeNotifyListeners();
+
+    try {
+      if (await ApiService.isLoggedIn()) {
+        final result = await ApiService.getUserProfile();
+        if (result['success']) {
+          _user = app_models.User.fromJson(result['user']);
+        }
+      }
+    } catch (e) {
+      print('❌ Initialization error: $e');
+    } finally {
+      _isLoading = false;
+      safeNotifyListeners(); // Use safe method
+    }
   }
 }
