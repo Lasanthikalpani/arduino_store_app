@@ -1,25 +1,56 @@
-// lib/providers/cart_provider.dart - FIXED VERSION
+// lib/providers/cart_provider.dart - COMPLETELY FIXED VERSION
 import 'package:flutter/foundation.dart';
-import '../models/cart_item.dart';
-import '../models/product.dart';
 import '../services/api_service.dart';
+
+class CartItem {
+  final String id;
+  final String productId;
+  final String productName;
+  final double price;
+  final int quantity;
+  final String imageUrl;
+
+  CartItem({
+    required this.id,
+    required this.productId,
+    required this.productName,
+    required this.price,
+    required this.quantity,
+    required this.imageUrl,
+  });
+
+  double get totalPrice => price * quantity;
+
+  @override
+  String toString() {
+    return 'CartItem{productName: $productName, price: $price, quantity: $quantity, total: $totalPrice}';
+  }
+}
 
 class CartProvider with ChangeNotifier {
   List<CartItem> _items = [];
   bool _isLoading = false;
   String? _error;
+  double _cartTotal = 0.0;
 
   List<CartItem> get items => _items;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  double get cartTotal => _cartTotal;
   int get itemCount => _items.fold(0, (sum, item) => sum + item.quantity);
   double get totalPrice => _items.fold(0, (sum, item) => sum + item.totalPrice);
 
-  // Store product cache to avoid repeated API calls
-  final Map<String, Product> _productCache = {};
-
   Future<void> loadCart() async {
+    // ✅ FIXED: Proper boolean check with await
+    final bool isLoggedIn = await ApiService.isLoggedIn();
+    if (isLoggedIn == false) {
+      _error = 'Please login to view cart';
+      notifyListeners();
+      return;
+    }
+
     _isLoading = true;
+    _error = null;
     notifyListeners();
 
     try {
@@ -27,157 +58,267 @@ class CartProvider with ChangeNotifier {
       
       print('🛒 Cart API Response: $response');
       
-      if (response['success'] == true) {
+      // ✅ FIXED: Proper boolean check
+      final bool success = response['success'] == true;
+      
+      if (success) {
         final cartData = response['cart'];
-        print('📦 Cart data structure: $cartData');
+        print('📦 Cart data: $cartData');
         
-        if (cartData['items'] != null) {
+        _items = [];
+        
+        if (cartData != null && cartData['items'] is List) {
           final itemsData = cartData['items'] as List;
-          print('🛍️ Cart items count: ${itemsData.length}');
+          print('🛍️ Raw cart items: $itemsData');
           
-          // Clear current items
-          _items = [];
-          
-          // Fetch product details for each cart item
           for (var itemData in itemsData) {
             try {
-              final productId = itemData['productId'];
-              print('🔍 Processing cart item for product: $productId');
+              final productId = itemData['productId']?.toString() ?? '';
+              final productName = itemData['name']?.toString() ?? 'Unknown Product';
+              final price = (itemData['price'] ?? 0.0).toDouble();
+              final quantity = (itemData['quantity'] ?? 1).toInt();
+              final imageUrl = itemData['imageUrl']?.toString() ?? '';
               
-              // Get product details
-              final product = await _getProductDetails(productId);
-              
-              // Create CartItem with product details
               final cartItem = CartItem(
-                id: itemData['id'] ?? productId,
+                id: productId,
                 productId: productId,
-                productName: product?.name ?? 'Product $productId',
-                price: product?.price ?? 0.0,
-                quantity: itemData['quantity'] ?? 1,
-                imageUrl: product?.imageUrl ?? '',
+                productName: productName,
+                price: price,
+                quantity: quantity,
+                imageUrl: imageUrl,
               );
               
               _items.add(cartItem);
-              print('✅ Added cart item: ${cartItem.productName} - \$${cartItem.price}');
+              print('✅ Added to cart: $cartItem');
             } catch (e) {
-              print('❌ Error processing cart item: $e');
-              // Create fallback cart item
-              final cartItem = CartItem(
-                id: itemData['id'] ?? itemData['productId'],
-                productId: itemData['productId'],
-                productName: 'Product ${itemData['productId']}',
-                price: 0.0,
-                quantity: itemData['quantity'] ?? 1,
-                imageUrl: '',
-              );
-              _items.add(cartItem);
+              print('❌ Error parsing cart item: $e - Data: $itemData');
             }
           }
           
-          print('✅ Loaded ${_items.length} cart items with details');
-          for (var item in _items) {
-            print('   - ${item.productName}: \$${item.price} x ${item.quantity} = \$${item.totalPrice}');
-          }
+          _cartTotal = (cartData['total'] ?? 0.0).toDouble();
+        } else {
+          print('📦 Cart is empty or items is null');
+          _items = [];
+          _cartTotal = 0.0;
         }
-        _error = null;
+        
+        print('🎯 Final cart: ${_items.length} items, total: \$$_cartTotal');
       } else {
         _error = response['error'] ?? 'Failed to load cart';
+        print('❌ Cart load error: $_error');
       }
     } catch (e) {
       _error = 'Network error: $e';
+      print('❌ Cart load exception: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // Helper method to get product details
-  Future<Product?> _getProductDetails(String productId) async {
-    // Check cache first
-    if (_productCache.containsKey(productId)) {
-      return _productCache[productId];
-    }
-    
-    try {
-      // Fetch all products and find the matching one
-      final productsResponse = await ApiService.getProducts();
-      if (productsResponse['success'] == true) {
-        final productsData = productsResponse['products'] as List;
-        for (var productJson in productsData) {
-          final product = Product.fromJson(productJson);
-          _productCache[product.id] = product; // Cache the product
-          if (product.id == productId) {
-            print('🎯 Found product: ${product.name} - \$${product.price}');
-            return product;
-          }
-        }
-      }
-    } catch (e) {
-      print('❌ Error fetching product details: $e');
-    }
-    
-    print('⚠️ Product not found: $productId');
-    return null;
-  }
-
   Future<void> addToCart(String productId, int quantity) async {
-    try {
-      final response = await ApiService.addToCart(productId, quantity);
-      
-      if (response['success'] == true) {
-        // Reload cart to get updated state from server
-        await loadCart();
-      } else {
-        _error = response['error'] ?? 'Failed to add item to cart';
-        notifyListeners();
-      }
-    } catch (e) {
-      _error = 'Network error: $e';
+    // ✅ FIXED: Proper boolean check with await
+    final bool isLoggedIn = await ApiService.isLoggedIn();
+    if (isLoggedIn == false) {
+      _error = 'Please login to add items to cart';
       notifyListeners();
-    }
-  }
-
-  Future<void> updateQuantity(String itemId, int newQuantity) async {
-    if (newQuantity <= 0) {
-      await removeFromCart(itemId);
       return;
     }
 
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
     try {
-      final response = await ApiService.updateCartItem(itemId, newQuantity);
+      final response = await ApiService.addToCart(productId, quantity);
       
-      if (response['success'] == true) {
+      print('➕ Add to cart response: $response');
+      
+      // ✅ FIXED: Proper boolean check
+      final bool success = response['success'] == true;
+      
+      if (success) {
         await loadCart();
       } else {
-        _error = response['error'] ?? 'Failed to update cart';
+        _error = response['error'] ?? 'Failed to add item to cart';
+        _isLoading = false;
         notifyListeners();
       }
     } catch (e) {
       _error = 'Network error: $e';
+      _isLoading = false;
       notifyListeners();
     }
   }
 
-  Future<void> removeFromCart(String itemId) async {
+  Future<void> updateQuantity(String productId, int newQuantity) async {
+    // ✅ FIXED: Proper boolean check with await
+    final bool isLoggedIn = await ApiService.isLoggedIn();
+    if (isLoggedIn == false) {
+      _error = 'Please login to update cart';
+      notifyListeners();
+      return;
+    }
+
+    if (newQuantity <= 0) {
+      await removeFromCart(productId);
+      return;
+    }
+
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
     try {
-      final response = await ApiService.removeFromCart(itemId);
+      final response = await ApiService.updateCartItem(productId, newQuantity);
       
-      if (response['success'] == true) {
+      print('✏️ Update cart response: $response');
+      
+      // ✅ FIXED: Proper boolean check
+      final bool success = response['success'] == true;
+      
+      if (success) {
         await loadCart();
       } else {
-        _error = response['error'] ?? 'Failed to remove item from cart';
+        _error = response['error'] ?? 'Failed to update cart';
+        _isLoading = false;
         notifyListeners();
       }
     } catch (e) {
       _error = 'Network error: $e';
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> removeFromCart(String productId) async {
+    // ✅ FIXED: Proper boolean check with await
+    final bool isLoggedIn = await ApiService.isLoggedIn();
+    if (isLoggedIn == false) {
+      _error = 'Please login to remove items from cart';
+      notifyListeners();
+      return;
+    }
+
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final response = await ApiService.removeFromCart(productId);
+      
+      print('🗑️ Remove from cart response: $response');
+      
+      // ✅ FIXED: Proper boolean check
+      final bool success = response['success'] == true;
+      
+      if (success) {
+        await loadCart();
+      } else {
+        _error = response['error'] ?? 'Failed to remove item from cart';
+        _isLoading = false;
+        notifyListeners();
+      }
+    } catch (e) {
+      _error = 'Network error: $e';
+      _isLoading = false;
       notifyListeners();
     }
   }
 
   Future<void> clearCart() async {
-    // Remove all items one by one
-    for (final item in List.from(_items)) {
-      await removeFromCart(item.id);
+    // ✅ FIXED: Proper boolean check with await
+    final bool isLoggedIn = await ApiService.isLoggedIn();
+    if (isLoggedIn == false) {
+      _error = 'Please login to clear cart';
+      notifyListeners();
+      return;
+    }
+
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final response = await ApiService.clearCart();
+      
+      print('🧹 Clear cart response: $response');
+      
+      // ✅ FIXED: Proper boolean check
+      final bool success = response['success'] == true;
+      
+      if (success) {
+        _items = [];
+        _cartTotal = 0.0;
+        _isLoading = false;
+        notifyListeners();
+      } else {
+        _error = response['error'] ?? 'Failed to clear cart';
+        _isLoading = false;
+        notifyListeners();
+      }
+    } catch (e) {
+      _error = 'Network error: $e';
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> checkout({
+    required String shippingAddress,
+    required String paymentMethod,
+    String city = '',
+    String zipCode = '',
+  }) async {
+    // ✅ FIXED: Proper boolean check with await
+    final bool isLoggedIn = await ApiService.isLoggedIn();
+    if (isLoggedIn == false) {
+      _error = 'Please login to checkout';
+      notifyListeners();
+      return;
+    }
+
+    if (_items.isEmpty) {
+      _error = 'Cart is empty';
+      notifyListeners();
+      return;
+    }
+
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final response = await ApiService.createOrder(
+        shippingAddress: shippingAddress,
+        paymentMethod: paymentMethod,
+        city: city,
+        zipCode: zipCode,
+        totalAmount: _cartTotal,
+      );
+      
+      print('💰 Checkout response: $response');
+      
+      // ✅ FIXED: Proper boolean check
+      final bool success = response['success'] == true;
+      
+      if (success) {
+        _items = [];
+        _cartTotal = 0.0;
+        _error = null;
+        _isLoading = false;
+        notifyListeners();
+        
+        print('🎉 Order created successfully!');
+      } else {
+        _error = response['error'] ?? 'Failed to create order';
+        _isLoading = false;
+        notifyListeners();
+      }
+    } catch (e) {
+      _error = 'Network error: $e';
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -203,5 +344,35 @@ class CartProvider with ChangeNotifier {
       ),
     );
     return item.quantity;
+  }
+
+  // Get cart summary for quick display
+  Map<String, dynamic> get cartSummary {
+    return {
+      'itemCount': itemCount,
+      'totalPrice': totalPrice,
+      'items': _items.map((item) => item.toString()).toList(),
+    };
+  }
+
+  // Quick add method for products
+  Future<void> quickAddToCart(String productId) async {
+    await addToCart(productId, 1);
+  }
+
+  // Increment quantity
+  Future<void> incrementQuantity(String productId) async {
+    final currentQuantity = getQuantity(productId);
+    await updateQuantity(productId, currentQuantity + 1);
+  }
+
+  // Decrement quantity
+  Future<void> decrementQuantity(String productId) async {
+    final currentQuantity = getQuantity(productId);
+    if (currentQuantity > 1) {
+      await updateQuantity(productId, currentQuantity - 1);
+    } else {
+      await removeFromCart(productId);
+    }
   }
 }

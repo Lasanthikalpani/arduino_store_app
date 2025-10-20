@@ -1,11 +1,11 @@
-// lib/services/api_service.dart
+// lib/services/api_service.dart - COMPLETE FIXED VERSION
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import '../models/user.dart'; // ADD THIS IMPORT
+import '../models/user.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:3001/api';
+  static const String baseUrl = 'http://localhost:3001';
   static final FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   // Helper method to get auth headers
@@ -17,7 +17,7 @@ class ApiService {
     };
   }
 
-  // Store token after login/register - FIXED METHOD
+  // Store token after login/register
   static Future<void> _storeAuthData(String token, String userId) async {
     await _secureStorage.write(key: 'auth_token', value: token);
     await _secureStorage.write(key: 'user_id', value: userId);
@@ -32,17 +32,39 @@ class ApiService {
   // Check if user is logged in
   static Future<bool> isLoggedIn() async {
     final token = await _secureStorage.read(key: 'auth_token');
-    return token != null;
+    return token != null && token.isNotEmpty;
   }
 
-  // Enhanced login method - FIXED
-  // lib/services/api_service.dart - FIXED loginUser method
+  // Get current user ID
+  static Future<String?> getCurrentUserId() async {
+    return await _secureStorage.read(key: 'user_id');
+  }
+
+  // HEALTH CHECK
+  static Future<Map<String, dynamic>> healthCheck() async {
+    try {
+      final url = Uri.parse('$baseUrl/api/health');
+      final response = await http.get(url).timeout(const Duration(seconds: 5));
+
+      final bool success = response.statusCode == 200;
+      
+      return {
+        'success': success,
+        'status': response.statusCode,
+        'message': response.body,
+      };
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  // LOGIN METHOD
   static Future<Map<String, dynamic>> loginUser({
     required String email,
     required String password,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl/auth/login');
+      final url = Uri.parse('$baseUrl/api/auth/login');
 
       print('🚀 Logging in user: $email');
 
@@ -65,60 +87,35 @@ class ApiService {
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
 
-        print('🔍 Response data structure:');
-        print('   - success: ${responseData['success']}');
-        print('   - message: ${responseData['message']}');
-        print(
-          '   - token: ${responseData['token'] != null ? "PRESENT" : "MISSING"}',
-        );
-        print(
-          '   - user: ${responseData['user'] != null ? "PRESENT" : "MISSING"}',
-        );
-        print('   - userId: ${responseData['userId']}');
+        final bool success = responseData['success'] == true;
+        
+        if (success) {
+          final String? token = responseData['token'];
+          final Map<String, dynamic> userData = responseData['user'] ?? {};
 
-        // Extract token
-        final String? token = responseData['token'];
+          final user = User.fromJson(userData);
 
-        // Extract user data - handle different possible structures
-        Map<String, dynamic> userData;
+          if (token != null) {
+            await _storeAuthData(token, user.userId);
+            print('✅ JWT Token stored successfully for user: ${user.userId}');
+          }
 
-        if (responseData['user'] != null) {
-          userData = responseData['user'] as Map<String, dynamic>;
+          return {
+            'success': true,
+            'message': responseData['message'] ?? 'Login successful',
+            'user': user,
+          };
         } else {
-          // If no 'user' field, use the main response but remove non-user fields
-          userData = Map.from(responseData);
-          userData.remove('success');
-          userData.remove('message');
-          userData.remove('token');
+          return {
+            'success': false,
+            'error': responseData['error'] ?? 'Login failed',
+          };
         }
-
-        // Ensure userId is set correctly
-        if (userData['userId'] == null && responseData['userId'] != null) {
-          userData['userId'] = responseData['userId'];
-        }
-
-        print('🔍 Final user data for User.fromJson(): $userData');
-
-        // Create User object from response
-        final user = User.fromJson(userData);
-
-        // Store authentication data
-        if (token != null) {
-          await _storeAuthData(token, user.userId);
-          print('✅ JWT Token stored successfully for user: ${user.userId}');
-        }
-
-        // Return Map with User object
-        return {
-          'success': true,
-          'message': responseData['message'] ?? 'Login successful',
-          'user': user, // This is a User object, not a Map
-        };
       } else {
-        final Map<String, dynamic> responseData = json.decode(response.body);
+        final Map<String, dynamic> errorData = json.decode(response.body);
         return {
           'success': false,
-          'error': responseData['error'] ?? 'Login failed',
+          'error': errorData['error'] ?? 'Login failed with status ${response.statusCode}',
         };
       }
     } catch (e) {
@@ -127,23 +124,7 @@ class ApiService {
     }
   }
 
-  // Add this method to your ApiService for health checking
-  static Future<Map<String, dynamic>> healthCheck() async {
-    try {
-      final url = Uri.parse('$baseUrl/health');
-      final response = await http.get(url).timeout(const Duration(seconds: 5));
-
-      return {
-        'success': response.statusCode == 200,
-        'status': response.statusCode,
-        'message': response.body,
-      };
-    } catch (e) {
-      return {'success': false, 'error': e.toString()};
-    }
-  }
-
-  // Your existing registration method (enhanced) - FIXED
+  // REGISTRATION METHOD
   static Future<Map<String, dynamic>> registerUser({
     required String firstName,
     required String lastName,
@@ -153,7 +134,7 @@ class ApiService {
     required String address,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl/auth/register');
+      final url = Uri.parse('$baseUrl/api/auth/register');
 
       print('🚀 Registering user: $email');
 
@@ -179,15 +160,14 @@ class ApiService {
 
       final Map<String, dynamic> responseData = json.decode(response.body);
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        // Create User object from response
+      final bool isSuccessStatus = response.statusCode == 200 || response.statusCode == 201;
+      final bool isSuccessResponse = responseData['success'] == true;
+      
+      if (isSuccessStatus && isSuccessResponse) {
         final user = User.fromJson(responseData['user'] ?? responseData);
 
-        // Store token if available - FIXED
         if (responseData['token'] != null) {
           await _storeAuthData(responseData['token'], user.userId);
-        } else if (responseData['user']?['token'] != null) {
-          await _storeAuthData(responseData['user']['token'], user.userId);
         }
 
         return {
@@ -198,31 +178,77 @@ class ApiService {
       } else {
         return {
           'success': false,
-          'message': responseData['error'] ?? 'Registration failed',
+          'error': responseData['error'] ?? 'Registration failed with status ${response.statusCode}',
         };
       }
     } catch (e) {
       print('❌ Registration error: $e');
-      return {'success': false, 'message': 'Network error: $e'};
+      return {'success': false, 'error': 'Network error: $e'};
     }
   }
 
   // PRODUCTS ENDPOINTS
   static Future<Map<String, dynamic>> getProducts() async {
     try {
-      final url = Uri.parse('$baseUrl/products');
+      final url = Uri.parse('$baseUrl/api/products');
       final response = await http
           .get(url, headers: await _getAuthHeaders())
           .timeout(const Duration(seconds: 10));
 
+      print('🛍️ Get Products Response: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
-        return {
-          'success': true,
-          'products': responseData['data'] ?? responseData,
-        };
+        
+        final bool success = responseData['success'] == true;
+        
+        if (success) {
+          return {
+            'success': true,
+            'products': responseData['data'] ?? [],
+          };
+        } else {
+          return {
+            'success': false,
+            'error': responseData['error'] ?? 'Failed to fetch products',
+          };
+        }
       } else {
         return {'success': false, 'error': 'Failed to fetch products'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  // CATEGORIES ENDPOINTS
+  static Future<Map<String, dynamic>> getCategories() async {
+    try {
+      final url = Uri.parse('$baseUrl/api/categories');
+      final response = await http
+          .get(url, headers: await _getAuthHeaders())
+          .timeout(const Duration(seconds: 10));
+
+      print('📁 Get Categories Response: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        
+        final bool success = responseData['success'] == true;
+        
+        if (success) {
+          return {
+            'success': true,
+            'categories': responseData['data'] ?? [],
+          };
+        } else {
+          return {
+            'success': false,
+            'error': responseData['error'] ?? 'Failed to fetch categories',
+          };
+        }
+      } else {
+        return {'success': false, 'error': 'Failed to fetch categories'};
       }
     } catch (e) {
       return {'success': false, 'error': 'Network error: $e'};
@@ -232,14 +258,29 @@ class ApiService {
   // CART ENDPOINTS
   static Future<Map<String, dynamic>> getCart() async {
     try {
-      final url = Uri.parse('$baseUrl/cart');
+      final url = Uri.parse('$baseUrl/api/cart');
       final response = await http
           .get(url, headers: await _getAuthHeaders())
           .timeout(const Duration(seconds: 10));
 
+      print('🛒 Get Cart Response: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
-        return {'success': true, 'cart': responseData['data'] ?? responseData};
+        
+        final bool success = responseData['success'] == true;
+        
+        if (success) {
+          return {
+            'success': true,
+            'cart': responseData['data'] ?? responseData,
+          };
+        } else {
+          return {
+            'success': false,
+            'error': responseData['error'] ?? 'Failed to fetch cart',
+          };
+        }
       } else {
         return {'success': false, 'error': 'Failed to fetch cart'};
       }
@@ -253,7 +294,7 @@ class ApiService {
     int quantity,
   ) async {
     try {
-      final url = Uri.parse('$baseUrl/cart/items');
+      final url = Uri.parse('$baseUrl/api/cart/add-item');
       final response = await http
           .post(
             url,
@@ -262,15 +303,23 @@ class ApiService {
           )
           .timeout(const Duration(seconds: 10));
 
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
+      print('➕ Add to Cart Response: ${response.statusCode}');
+
+      final responseData = json.decode(response.body);
+      
+      final bool isSuccessStatus = response.statusCode == 200 || response.statusCode == 201;
+      
+      if (isSuccessStatus) {
         return {
           'success': true,
           'message': responseData['message'] ?? 'Item added to cart',
           'cart': responseData['data'] ?? responseData,
         };
       } else {
-        return {'success': false, 'error': 'Failed to add item to cart'};
+        return {
+          'success': false,
+          'error': responseData['error'] ?? 'Failed to add item to cart',
+        };
       }
     } catch (e) {
       return {'success': false, 'error': 'Network error: $e'};
@@ -278,50 +327,100 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> updateCartItem(
-    String itemId,
+    String productId,
     int quantity,
   ) async {
     try {
-      final url = Uri.parse('$baseUrl/cart/items/$itemId');
+      final url = Uri.parse('$baseUrl/api/cart/update-item');
       final response = await http
           .put(
             url,
             headers: await _getAuthHeaders(),
-            body: json.encode({'quantity': quantity}),
+            body: json.encode({'productId': productId, 'quantity': quantity}),
           )
           .timeout(const Duration(seconds: 10));
 
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
+      print('✏️ Update Cart Response: ${response.statusCode}');
+
+      final responseData = json.decode(response.body);
+      
+      final bool isSuccessStatus = response.statusCode == 200;
+      
+      if (isSuccessStatus) {
         return {
           'success': true,
           'message': 'Cart updated successfully',
           'cart': responseData['data'] ?? responseData,
         };
       } else {
-        return {'success': false, 'error': 'Failed to update cart'};
+        return {
+          'success': false,
+          'error': responseData['error'] ?? 'Failed to update cart',
+        };
       }
     } catch (e) {
       return {'success': false, 'error': 'Network error: $e'};
     }
   }
 
-  static Future<Map<String, dynamic>> removeFromCart(String itemId) async {
+  static Future<Map<String, dynamic>> removeFromCart(String productId) async {
     try {
-      final url = Uri.parse('$baseUrl/cart/items/$itemId');
+      final url = Uri.parse('$baseUrl/api/cart/remove-item');
       final response = await http
-          .delete(url, headers: await _getAuthHeaders())
+          .delete(
+            url,
+            headers: await _getAuthHeaders(),
+            body: json.encode({'productId': productId}),
+          )
           .timeout(const Duration(seconds: 10));
 
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
+      print('🗑️ Remove from Cart Response: ${response.statusCode}');
+
+      final responseData = json.decode(response.body);
+      
+      final bool isSuccessStatus = response.statusCode == 200;
+      
+      if (isSuccessStatus) {
         return {
           'success': true,
           'message': 'Item removed from cart',
           'cart': responseData['data'] ?? responseData,
         };
       } else {
-        return {'success': false, 'error': 'Failed to remove item from cart'};
+        return {
+          'success': false,
+          'error': responseData['error'] ?? 'Failed to remove item from cart',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> clearCart() async {
+    try {
+      final url = Uri.parse('$baseUrl/api/cart/clear');
+      final response = await http
+          .delete(url, headers: await _getAuthHeaders())
+          .timeout(const Duration(seconds: 10));
+
+      print('🧹 Clear Cart Response: ${response.statusCode}');
+
+      final responseData = json.decode(response.body);
+      
+      final bool isSuccessStatus = response.statusCode == 200;
+      
+      if (isSuccessStatus) {
+        return {
+          'success': true,
+          'message': 'Cart cleared successfully',
+          'cart': responseData['data'] ?? responseData,
+        };
+      } else {
+        return {
+          'success': false,
+          'error': responseData['error'] ?? 'Failed to clear cart',
+        };
       }
     } catch (e) {
       return {'success': false, 'error': 'Network error: $e'};
@@ -329,124 +428,67 @@ class ApiService {
   }
 
   // ORDERS ENDPOINTS
-  // In ApiService, update the createOrder method:
-  // In lib/services/api_service.dart - UPDATE createOrder method:
-
-  // In lib/services/api_service.dart - FIX the null safety issue:
-
   static Future<Map<String, dynamic>> createOrder({
     required String shippingAddress,
-    required String city,
-    required String zipCode,
     required String paymentMethod,
-    required double totalAmount,
+    String? city,
+    String? zipCode,
+    double? totalAmount,
   }) async {
     try {
-      // Try different order endpoint variations
-      final List<String> possibleEndpoints = [
-        '$baseUrl/orders',
-        '$baseUrl/order',
-        '$baseUrl/checkout/order',
-      ];
+      final url = Uri.parse('$baseUrl/api/orders');
 
-      Map<String, dynamic>? lastResponse;
-      String? lastError;
-
-      for (final endpoint in possibleEndpoints) {
-        try {
-          final url = Uri.parse(endpoint);
-
-          // Get cart first to include items in order
-          final cartResponse = await getCart();
-          if (cartResponse['success'] != true) {
-            return {'success': false, 'error': 'Failed to get cart data'};
-          }
-
-          final orderData = {
-            'shippingAddress': shippingAddress,
-            'city': city,
-            'zipCode': zipCode,
-            'paymentMethod': paymentMethod,
-            'totalAmount': totalAmount,
-            'items': cartResponse['cart']['items'],
-            'status': 'pending',
-          };
-
-          print('📦 Creating order at: $endpoint');
-          print('📦 Order data: $orderData');
-
-          final response = await http
-              .post(
-                url,
-                headers: await _getAuthHeaders(),
-                body: json.encode(orderData),
-              )
-              .timeout(const Duration(seconds: 10));
-
-          print('📥 Order creation response: ${response.statusCode}');
-          print('📥 Order creation body: ${response.body}');
-
-          if (response.statusCode == 200 || response.statusCode == 201) {
-            final responseData = json.decode(response.body);
-            return {
-              'success': true,
-              'message':
-                  responseData['message'] ?? 'Order created successfully',
-              'order': responseData['data'] ?? responseData,
-            };
-          } else {
-            lastResponse = json.decode(response.body);
-            // FIX: Use null-safe access
-            lastError = lastResponse?['error'] ?? 'Failed to create order';
-            print('❌ Endpoint $endpoint failed: $lastError');
-          }
-        } catch (e) {
-          lastError = 'Endpoint $endpoint error: $e';
-          print('❌ $lastError');
-        }
+      final cartResponse = await getCart();
+      
+      final bool isCartSuccess = cartResponse['success'] == true;
+      
+      if (!isCartSuccess) {
+        return {'success': false, 'error': 'Failed to get cart data'};
       }
 
-      // If all endpoints failed
-      return {
-        'success': false,
-        'error': lastError ?? 'All order endpoints failed',
+      final orderData = {
+        'shippingAddress': shippingAddress,
+        'paymentMethod': paymentMethod,
+        'city': city ?? '',
+        'zipCode': zipCode ?? '',
+        'totalAmount': totalAmount ?? cartResponse['cart']['total'] ?? 0,
       };
+
+      print('📦 Creating order at: $url');
+
+      final response = await http
+          .post(
+            url,
+            headers: await _getAuthHeaders(),
+            body: json.encode(orderData),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      print('📥 Order creation response: ${response.statusCode}');
+
+      final responseData = json.decode(response.body);
+      
+      final bool isSuccessStatus = response.statusCode == 200 || response.statusCode == 201;
+      
+      if (isSuccessStatus) {
+        return {
+          'success': true,
+          'message': responseData['message'] ?? 'Order created successfully',
+          'order': responseData['data'] ?? responseData,
+        };
+      } else {
+        return {
+          'success': false,
+          'error': responseData['error'] ?? 'Failed to create order',
+        };
+      }
     } catch (e) {
       print('❌ Order creation error: $e');
       return {'success': false, 'error': 'Network error: $e'};
     }
   }
-  // In lib/services/api_service.dart - ADD this method:
 
-  static Future<void> discoverEndpoints() async {
-    print('🔍 Discovering available endpoints...');
-
-    final endpoints = [
-      '/orders',
-      '/order',
-      '/checkout',
-      '/checkout/order',
-      '/api/orders',
-      '/api/order',
-    ];
-
-    for (final endpoint in endpoints) {
-      try {
-        final url = Uri.parse('http://localhost:3001$endpoint');
-        final response = await http
-            .get(url)
-            .timeout(const Duration(seconds: 3));
-        print('   $endpoint: ${response.statusCode}');
-      } catch (e) {
-        print('   $endpoint: ERROR - $e');
-      }
-    }
-  }
-
-  // TEMPORARY: Add mock order creation for testing
-  // In lib/services/api_service.dart - ADD this mock order method:
-
-  // Add this method to your ApiService class
+  // ✅ ADD THE MISSING METHOD HERE
   static Future<Map<String, dynamic>> createOrderMock({
     required String shippingAddress,
     required String city,
@@ -483,17 +525,29 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getOrders() async {
     try {
-      final url = Uri.parse('$baseUrl/orders');
+      final url = Uri.parse('$baseUrl/api/orders');
       final response = await http
           .get(url, headers: await _getAuthHeaders())
           .timeout(const Duration(seconds: 10));
 
+      print('📋 Get Orders Response: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
-        return {
-          'success': true,
-          'orders': responseData['data'] ?? responseData,
-        };
+        
+        final bool success = responseData['success'] == true;
+        
+        if (success) {
+          return {
+            'success': true,
+            'orders': responseData['data'] ?? [],
+          };
+        } else {
+          return {
+            'success': false,
+            'error': responseData['error'] ?? 'Failed to fetch orders',
+          };
+        }
       } else {
         return {'success': false, 'error': 'Failed to fetch orders'};
       }
@@ -505,19 +559,60 @@ class ApiService {
   // USER PROFILE ENDPOINTS
   static Future<Map<String, dynamic>> getUserProfile() async {
     try {
-      final url = Uri.parse('$baseUrl/auth/profile');
+      final url = Uri.parse('$baseUrl/api/auth/me');
       final response = await http
           .get(url, headers: await _getAuthHeaders())
           .timeout(const Duration(seconds: 10));
 
+      print('👤 Get Profile Response: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
-        return {'success': true, 'user': responseData['data'] ?? responseData};
+        
+        final bool success = responseData['success'] == true;
+        
+        if (success) {
+          return {
+            'success': true,
+            'user': responseData['data']?['user'] ?? responseData['data'] ?? responseData,
+          };
+        } else {
+          return {
+            'success': false,
+            'error': responseData['error'] ?? 'Failed to fetch user profile',
+          };
+        }
       } else {
         return {'success': false, 'error': 'Failed to fetch user profile'};
       }
     } catch (e) {
       return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  // ENDPOINT DISCOVERY
+  static Future<void> discoverEndpoints() async {
+    print('🔍 Discovering available endpoints...');
+
+    final endpoints = [
+      '/api/health',
+      '/api/auth/login',
+      '/api/auth/register',
+      '/api/products',
+      '/api/categories',
+      '/api/cart',
+      '/api/orders',
+      '/api/auth/me',
+    ];
+
+    for (final endpoint in endpoints) {
+      try {
+        final url = Uri.parse('$baseUrl$endpoint');
+        final response = await http.get(url).timeout(const Duration(seconds: 3));
+        print('   $endpoint: ${response.statusCode}');
+      } catch (e) {
+        print('   $endpoint: ERROR - $e');
+      }
     }
   }
 }

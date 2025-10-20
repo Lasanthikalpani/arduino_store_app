@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/cart_provider.dart';
-import '../models/cart_item.dart';
+import '../providers/cart_provider.dart'; // Only import CartProvider
+// REMOVED: import '../models/cart_item.dart'; 
 import 'checkout_screen.dart';
 
 class CartScreen extends StatefulWidget {
@@ -156,7 +156,7 @@ class CartItemsList extends StatelessWidget {
 }
 
 class CartItemCard extends StatelessWidget {
-  final CartItem item;
+  final CartItem item; // This now uses CartItem from cart_provider.dart
   final CartProvider cartProvider;
 
   const CartItemCard({
@@ -247,7 +247,7 @@ class CartItemCard extends StatelessWidget {
                         constraints: const BoxConstraints(),
                         onPressed: () {
                           if (item.quantity > 1) {
-                            cartProvider.updateQuantity(item.id, item.quantity - 1);
+                            cartProvider.updateQuantity(item.productId, item.quantity - 1);
                           } else {
                             _showRemoveDialog(context, item, cartProvider);
                           }
@@ -275,7 +275,7 @@ class CartItemCard extends StatelessWidget {
                         padding: const EdgeInsets.all(4),
                         constraints: const BoxConstraints(),
                         onPressed: () {
-                          cartProvider.updateQuantity(item.id, item.quantity + 1);
+                          cartProvider.updateQuantity(item.productId, item.quantity + 1);
                         },
                       ),
                     ],
@@ -319,7 +319,7 @@ class CartItemCard extends StatelessWidget {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              cartProvider.removeFromCart(item.id);
+              cartProvider.removeFromCart(item.productId);
             },
             child: const Text('Remove', style: TextStyle(color: Colors.red)),
           ),
