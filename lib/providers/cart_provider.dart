@@ -40,8 +40,8 @@ class CartProvider with ChangeNotifier {
   int get itemCount => _items.fold(0, (sum, item) => sum + item.quantity);
   double get totalPrice => _items.fold(0, (sum, item) => sum + item.totalPrice);
 
+  // Update your loadCart method in CartProvider
   Future<void> loadCart() async {
-    // ✅ FIXED: Proper boolean check with await
     final bool isLoggedIn = await ApiService.isLoggedIn();
     if (isLoggedIn == false) {
       _error = 'Please login to view cart';
@@ -55,53 +55,76 @@ class CartProvider with ChangeNotifier {
 
     try {
       final response = await ApiService.getCart();
-      
+
       print('🛒 Cart API Response: $response');
-      
-      // ✅ FIXED: Proper boolean check
+
       final bool success = response['success'] == true;
-      
+
       if (success) {
         final cartData = response['cart'];
         print('📦 Cart data: $cartData');
-        
+
         _items = [];
-        
+
         if (cartData != null && cartData['items'] is List) {
           final itemsData = cartData['items'] as List;
           print('🛍️ Raw cart items: $itemsData');
-          
+
+          // Get all products to match with cart items
+          final productsResponse = await ApiService.getProducts();
+          final List<dynamic> allProducts = productsResponse['success'] == true
+              ? productsResponse['products']
+              : [];
+
+          print('🔍 Available products: ${allProducts.length}');
+
           for (var itemData in itemsData) {
             try {
               final productId = itemData['productId']?.toString() ?? '';
-              final productName = itemData['name']?.toString() ?? 'Unknown Product';
-              final price = (itemData['price'] ?? 0.0).toDouble();
               final quantity = (itemData['quantity'] ?? 1).toInt();
-              final imageUrl = itemData['imageUrl']?.toString() ?? '';
-              
+
+              // Find product details
+              Map<String, dynamic>? productDetails;
+              for (var product in allProducts) {
+                if (product['id'] == productId ||
+                    product['productId'] == productId) {
+                  productDetails = product;
+                  break;
+                }
+              }
+
+              final productName =
+                  productDetails?['name']?.toString() ?? 'Unknown Product';
+              final price =
+                  (productDetails?['price'] ?? itemData['subtotal'] ?? 0.0)
+                      .toDouble();
+              final imageUrl = productDetails?['imageUrl']?.toString() ?? '';
+
               final cartItem = CartItem(
                 id: productId,
                 productId: productId,
                 productName: productName,
-                price: price,
+                price: price > 0
+                    ? price
+                    : (itemData['subtotal'] ?? 0.0).toDouble() / quantity,
                 quantity: quantity,
                 imageUrl: imageUrl,
               );
-              
+
               _items.add(cartItem);
               print('✅ Added to cart: $cartItem');
             } catch (e) {
               print('❌ Error parsing cart item: $e - Data: $itemData');
             }
           }
-          
+
           _cartTotal = (cartData['total'] ?? 0.0).toDouble();
         } else {
           print('📦 Cart is empty or items is null');
           _items = [];
           _cartTotal = 0.0;
         }
-        
+
         print('🎯 Final cart: ${_items.length} items, total: \$$_cartTotal');
       } else {
         _error = response['error'] ?? 'Failed to load cart';
@@ -131,12 +154,12 @@ class CartProvider with ChangeNotifier {
 
     try {
       final response = await ApiService.addToCart(productId, quantity);
-      
+
       print('➕ Add to cart response: $response');
-      
+
       // ✅ FIXED: Proper boolean check
       final bool success = response['success'] == true;
-      
+
       if (success) {
         await loadCart();
       } else {
@@ -171,12 +194,12 @@ class CartProvider with ChangeNotifier {
 
     try {
       final response = await ApiService.updateCartItem(productId, newQuantity);
-      
+
       print('✏️ Update cart response: $response');
-      
+
       // ✅ FIXED: Proper boolean check
       final bool success = response['success'] == true;
-      
+
       if (success) {
         await loadCart();
       } else {
@@ -206,12 +229,12 @@ class CartProvider with ChangeNotifier {
 
     try {
       final response = await ApiService.removeFromCart(productId);
-      
+
       print('🗑️ Remove from cart response: $response');
-      
+
       // ✅ FIXED: Proper boolean check
       final bool success = response['success'] == true;
-      
+
       if (success) {
         await loadCart();
       } else {
@@ -241,12 +264,12 @@ class CartProvider with ChangeNotifier {
 
     try {
       final response = await ApiService.clearCart();
-      
+
       print('🧹 Clear cart response: $response');
-      
+
       // ✅ FIXED: Proper boolean check
       final bool success = response['success'] == true;
-      
+
       if (success) {
         _items = [];
         _cartTotal = 0.0;
@@ -296,19 +319,19 @@ class CartProvider with ChangeNotifier {
         zipCode: zipCode,
         totalAmount: _cartTotal,
       );
-      
+
       print('💰 Checkout response: $response');
-      
+
       // ✅ FIXED: Proper boolean check
       final bool success = response['success'] == true;
-      
+
       if (success) {
         _items = [];
         _cartTotal = 0.0;
         _error = null;
         _isLoading = false;
         notifyListeners();
-        
+
         print('🎉 Order created successfully!');
       } else {
         _error = response['error'] ?? 'Failed to create order';
